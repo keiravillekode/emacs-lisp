@@ -1,0 +1,703 @@
+#! /usr/bin/env python3
+
+import json
+import os
+import subprocess
+
+
+# Before running this, use
+# bin/configlet sync
+# bin/generate_practice_exercise $slug
+
+
+for EXERCISE in ['wordy']:
+
+    with open(f'../emacs-lisp/config.json', encoding='utf-8') as data_file:
+        config = json.load(data_file)
+    for exercise in config['exercises']['practice']:
+        if exercise['slug'] == EXERCISE:
+            exercise_name = exercise['name']
+            print(exercise_name)
+
+    def read_canonical_data(exercise):
+        prefix = "Using cached 'problem-specifications' dir: "
+        args = ['bin/configlet', 'info', '-o', '-v', 'd']
+        info = subprocess.run(args, capture_output=True, check=True, text=True).stdout.split("\n")
+        cache_dir = [line[len(prefix):] for line in info if line.startswith(prefix)]
+        if len(cache_dir) != 1:
+            raise Exception("Could not determine 'problem-specifications' dir")
+        path = f"{cache_dir[0]}/exercises/{exercise}/canonical-data.json"
+        with open(path, "r") as f:
+            return json.loads(f.read())
+
+    parsed_json = read_canonical_data(EXERCISE)
+
+    reimplemented = []
+
+    def output_case_to_reimplemented(case):
+        if 'property' in case.keys():
+            # print(f'Has "property": {case}')
+            property = case['property']
+            if 'reimplements' in case.keys():
+                reimplemented.append(case['reimplements'])
+        elif 'cases' in case.keys():
+            for inner_case in case['cases']:
+                output_case_to_reimplemented(inner_case)
+        else:
+            print(f'Missing "property": {case}')
+
+    for case in parsed_json['cases']:
+        if 'uuid' in case.keys():
+            output_case_to_reimplemented(case)
+        else:
+            for inner_case in case['cases']:
+                output_case_to_reimplemented(inner_case)   
+
+
+    EXERCISE_DIR=f'../emacs-lisp/exercises/practice/{EXERCISE}'
+    META_DIR=f'../emacs-lisp/exercises/practice/{EXERCISE}/.meta'
+
+    if not os.path.exists(EXERCISE_DIR):
+        os.mkdir(EXERCISE_DIR)
+    if not os.path.exists(META_DIR):
+        os.mkdir(META_DIR)
+
+    with open(f'{META_DIR}/tests.toml', 'w', encoding='utf-8') as toml_file:
+        # toml_file.write('# This is an auto-generated file. Regular comments will be removed when this\n')
+        # toml_file.write('# file is regenerated. Regenerating will not touch any manually added keys,\n')
+        # toml_file.write('# so comments can be added in a "comment" key.\n')
+
+
+        toml_file.write('# This is an auto-generated file.\n')
+        toml_file.write('#\n')
+        toml_file.write('# Regenerating this file via `configlet sync` will:\n')
+        toml_file.write('# - Recreate every `description` key/value pair\n')
+        toml_file.write('# - Recreate every `reimplements` key/value pair, where they exist in problem-specifications\n')
+        toml_file.write('# - Remove any `include = true` key/value pair (an omitted `include` key implies inclusion)\n')
+        toml_file.write('# - Preserve any other key/value pair\n')
+        toml_file.write('#\n')
+        toml_file.write('# As user-added comments (using the # character) will be removed when this file\n')
+        toml_file.write('# is regenerated, comments can be added via a `comment` key.\n')
+
+
+        def output_case_to_tolm(case, parent_description = None):
+            description = case['description']
+            if parent_description:
+                description = parent_description + ' -> ' + description
+            if 'cases' in case.keys():
+                for inner_case in case['cases']:
+                    output_case_to_tolm(inner_case, description)
+                return
+
+            uuid = case['uuid']
+            toml_file.write('\n')
+            toml_file.write(f'[{uuid}]\n')
+            toml_file.write(f'description = "{description}"\n')
+            if uuid in reimplemented:
+                toml_file.write('include = false\n')
+            if 'reimplements' in case.keys():
+                reimplements = case['reimplements']
+                toml_file.write(f'reimplements = "{reimplements}"\n')
+
+
+        for case in parsed_json['cases']:
+            if 'uuid' in case.keys():
+                output_case_to_tolm(case)
+            else:
+                for inner_case in case['cases']:
+                    output_case_to_tolm(inner_case, case['description'])   
+
+
+    with open(f'{EXERCISE_DIR}/{EXERCISE}-test.el', 'w', encoding='utf-8') as test_file:
+        if EXERCISE in ['food-chain', 'proverb', 'house', 'twelve-days', 'bottle-song', 'variable-length-quantity']:
+            test_file.write(f';;; {EXERCISE}-test.el --- {exercise_name} (exercism)  -*- lexical-binding: t; -*-\n')
+        else:
+            test_file.write(f';;; {EXERCISE}-test.el --- Tests for {exercise_name} (exercism)  -*- lexical-binding: t; -*-\n')
+        # test_file.write(f';;; {EXERCISE}-test.el --- {exercise_name} (exercism)  -*- lexical-binding: t; -*-\n')
+        test_file.write('\n')
+        test_file.write(';;; Commentary:\n')
+        test_file.write('\n')
+        test_file.write(';;; Code:\n')
+        test_file.write('\n')
+        test_file.write('\n')
+        test_file.write(f'(load-file "{EXERCISE}.el")\n')
+        property = 'FIXME-PROPERTY'
+        args = 'FIXME-ARGS'
+        if EXERCISE == 'minesweeper':
+            property = 'annotate'
+            args = 'minefield'
+        if EXERCISE == 'satellite':
+            property = 'tree-from-traversals'
+            args = 'preorder inorder'
+        if EXERCISE == 'wordy':
+            property = 'answer'
+            args = 'question'
+        if EXERCISE == 'game-of-life':
+            property = 'tick'
+            args = 'matrix'
+        if EXERCISE == 'change':
+            property = 'find-fewest-coins'
+            args = 'coins target'
+
+
+        if EXERCISE == 'sieve':
+            property = 'primes'
+            args = 'limit'
+        if EXERCISE == 'diamond':
+            property = 'rows'
+            args = 'letter'
+        if EXERCISE == 'dominoes':
+            property = 'can-chain'
+            args = 'dominoes'
+            # (declare-function can-chain "dominoes.el" (dominoes))
+        if EXERCISE == 'knapsack':
+            property = 'maximum-value'
+            args = 'maximum-weight items'
+        if EXERCISE == 'pascals-triangle':
+            property = 'rows'
+            args = 'count'
+        if EXERCISE == 'book-store':
+            property = 'total'
+            args = 'basket'
+        if EXERCISE == 'connect':
+            property = 'winner'
+            args = 'board'
+        if EXERCISE == 'flatten-array':
+            property = 'list-flatten'
+            args = 'array'
+        if EXERCISE == 'space-age':
+            property = 'age'
+            args = 'planet seconds'
+        if EXERCISE == 'kindergarten-garden':
+            property = 'plants'
+            args = 'diagram student'
+        if EXERCISE == 'nth-prime':
+            property = 'prime'
+            args = 'number'
+        if EXERCISE == 'pig-latin':
+            property = 'translate'
+            args = 'phrase'
+        elif EXERCISE == 'isbn-verifier':
+            property = 'validp'
+            args = 'isbn'
+        elif EXERCISE == 'secret-handshake':
+            property = 'commands'
+            args = 'number'
+        elif EXERCISE == 'protein-translation':
+            property = 'proteins'
+            args = 'strand'
+        elif EXERCISE == 'sum-of-multiples':
+            property = 'sum'
+            args = 'factors limit'
+        elif EXERCISE == 'square-root':
+            property = 'square-root'
+            args = 'radicand'
+        elif EXERCISE == 'series':
+            property = 'slices'
+            args = 'series slice-length'
+        elif EXERCISE in ['food-chain', 'house', 'twelve-days']:
+            property = 'recite'
+            args = 'start-verse end-verse'
+        elif EXERCISE in ['bottle-song']:
+            property = 'recite'
+            args = 'start-bottles take-down'
+        elif EXERCISE == 'pythagorean-triplet':
+            property = 'triplets-with-sum'
+            args = 'n'
+        elif EXERCISE == 'prime-factors':
+            property = 'factors'
+            args = 'value'
+        elif EXERCISE == 'spiral-matrix':
+            property = 'spiral-matrix'
+            args = 'size'
+
+        if EXERCISE == 'palindrome-products':
+            property = 'smallest'
+            args = 'min max'
+            test_file.write(f'(declare-function {property} "{EXERCISE}.el" ({args}))\n')
+            property = 'largest'
+            args = 'min max'
+            test_file.write(f'(declare-function {property} "{EXERCISE}.el" ({args}))\n')
+        elif EXERCISE == 'variable-length-quantity':
+            property = 'encode'
+            args = 'integers'
+            test_file.write(f'(declare-function {property} "{EXERCISE}.el" ({args}))\n')
+            property = 'decode'
+            args = 'integers'
+            test_file.write(f'(declare-function {property} "{EXERCISE}.el" ({args}))\n')
+        elif EXERCISE == 'change':
+            property = 'find-fewest-coins'
+            args = 'coins target'
+
+        else:
+            test_file.write(f'(declare-function {property} "{EXERCISE}.el" ({args}))\n')
+
+        def output_case_to_test(case, parent_description = None):
+            description = case['description']
+            if parent_description and EXERCISE not in ["bottle-song", "variable-length-quantity"]:
+                description = parent_description + '-' + description
+                description = description.replace('garden-garden', 'garden')
+            if 'cases' in case.keys():
+                for inner_case in case['cases']:
+                    output_case_to_test(inner_case, description)
+                return
+
+            uuid = case['uuid']
+            if uuid in reimplemented:
+                return
+
+            test_name = description.lower().replace(' ', '-').replace('_', '-').replace("'", '').replace(",", '')
+            test_name = test_name.replace('(0-span)', 'zero-span')
+            test_name = test_name.replace('(', '').replace(')', '')
+            test_file.write('\n')
+            test_file.write('\n')
+
+            if len(test_name) >= 82:
+                test_file.write(f'(ert-deftest\n')
+                test_file.write(f'    {test_name}\n')
+                test_file.write(f'    ()\n')
+            else:
+                test_file.write(f'(ert-deftest {test_name} ()\n')
+
+            input = case['input']
+            expectation = case['expected']
+            call = 'TBD'
+            if EXERCISE == 'largest-series-product':
+                assert property == 'largestProduct'
+                property = 'largest-product'
+                digits = input['digits']
+                span = input['span']
+                call = f'({property} "{digits}" {span})'
+            if EXERCISE == 'collatz-conjecture':
+                number = input['number']
+                call = f'({property} {number})'
+
+            if EXERCISE == 'wordy':
+                property = 'answer'
+                question = input['question']
+                call = f'({property} "{question}")'
+
+            if EXERCISE == 'nth-prime':
+                property = 'prime'
+                number = input['number']
+                call = f'({property} {number})'
+
+            if EXERCISE == 'dominoes':
+                property = 'can-chain'
+                dominoes = input['dominoes']
+                dominoes = ' '.join(list(map(lambda stone: f"({stone[0]} . {stone[1]})", dominoes)))
+                call = f'({property} [{dominoes}])'
+
+            if EXERCISE == 'change':
+                property = 'find-fewest-coins'
+                coins = input['coins']
+                coins = ' '.join(map(str, coins))
+                target = input['target']
+                call = f"({property} '({coins}) {target})"
+
+                if not isinstance(expectation, dict):
+                    expectation = ' '.join(map(str, expectation))
+                    expectation = f"'({expectation})"
+
+            if EXERCISE == 'palindrome-products':
+                property = case['property']
+                mn = input['min']
+                mx = input['max']
+                call = f'({property} {mn} {mx})'
+
+                if 'error' not in expectation.keys():
+                    
+                    value = expectation['value']
+                    if value is None:
+                        value = 'nil'
+                    factors = expectation['factors']
+                    factors = "'" + str(factors).replace('[', '(').replace(']', ')').replace(', ', ' ')
+                    expectation = f"'((:value . {value}) (:factors . {factors}))"
+
+
+            if EXERCISE == 'variable-length-quantity':
+                def tohex(integers):
+                    print(description)
+                    print(integers)
+                    return "'(" + " ".join(list(map(lambda integer: '#x' + hex(integer)[2:].upper(), integers))) + ")"
+
+                property = case['property']
+                integers = tohex(input['integers'])
+                call = f'({property} {integers  })'
+
+                if not isinstance(expectation, dict):
+                    expectation = tohex(expectation)
+
+
+            if EXERCISE == 'space-age':
+                property = 'age'
+                planet = input['planet'].lower()
+                seconds = input['seconds']
+                call = f'({property} :{planet} {seconds})'
+
+            if EXERCISE == 'satellite':
+                property = 'tree-from-traversals'
+                preorder = input['preorder']
+                inorder = input['inorder']
+                preorder = "'" + str(preorder).replace('[', '(').replace(']', ')').replace(', ', ' ').replace("'", '"')
+                inorder = "'" + str(inorder).replace('[', '(').replace(']', ')').replace(', ', ' ').replace("'", '"')
+                call = f'({property} {preorder} {inorder})'
+
+                if 'error' not in expectation.keys():
+                    def f(expectation):
+                        if expectation == {}:
+                            return 'nil'
+                        v = expectation["v"]
+                        l = f(expectation['l'])
+                        r = f(expectation['r'])
+                        return f'((:v . "{v}") (:l . {l}) (:r . {r}))'
+
+                    expectation = f(expectation)
+                    if expectation != 'nil':
+                        expectation = "'" + expectation
+
+
+
+
+
+            if EXERCISE == 'flatten-array':
+                property = 'list-flatten'
+
+                def f(array):
+                    if array == None:
+                        return 'nil'
+                    if isinstance(array, int):
+                        return str(array)
+                    if array == []:
+                        return '()'
+                    result = ''
+                    for element in array:
+                        result += ' '
+                        result += f(element)
+                    return '(' + result[1:] + ')'
+                    # return str(list(map(f, array))).replace('[', '(').replace(']', ')').replace(', ', ' ')
+
+                array = f(input['array'])
+                expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace(', ', ' ')
+
+                call = f"({property} '{array})"
+
+            if EXERCISE == 'space-age':
+                property = 'age'
+                planet = input['planet'].lower()
+                seconds = input['seconds']
+                call = f'({property} :{planet} {seconds})'
+
+            if EXERCISE == 'spiral-matrix':
+                property = 'spiral-matrix'
+                size = input['size']
+                call = f'({property} {size})'
+
+                # expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace(', ', ' ')
+                expectation =  str(expectation).replace(', ', ' ').replace(' [', '\n                  [')
+
+            if EXERCISE in ['food-chain', 'house', 'twelve-days', 'bottle-song']:
+                property = 'recite'
+
+
+                if EXERCISE in ['bottle-song']:
+                    startBottles = input['startBottles']
+                    takeDown = input['takeDown']
+                    call = f'({property} {startBottles} {takeDown})'
+                else:
+                    start_verse = input['startVerse']
+                    end_verse = input['endVerse']
+                    call = f'({property} {start_verse} {end_verse})'
+
+                # expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace(', ', ' ')
+                # expectation =  str(expectation).replace(', ', '\n                    ').replace('[', '').replace(']', '')
+
+                if False: 
+                    def spread(line):
+                        if EXERCISE in ['house']:
+                            return "\\\n" + line.replace(" that", " \\\nthat")
+                        if EXERCISE in ['twelve-days']:
+                            return "\\\n" + line.replace(": ", ": \\\n").replace(", ", ", \\\n")
+                        return line
+
+                    expectation = '\n                    '.join(map(lambda line: f'"{spread(line)}"', expectation))
+
+
+                def spread(line):
+                    if EXERCISE in ['house']:
+                        return line.replace(" that", " \\\nthat")
+                    if EXERCISE in ['twelve-days']:
+                        return line.replace(": ", ": \\\n").replace(", ", ", \\\n")
+                    return line
+
+                if EXERCISE in ['house', 'twelve-days']:
+                    expectation = '\n'.join(map(lambda line: f'\n"{spread(line)}"', expectation))
+                else:
+                    expectation = '\n                    '.join(map(lambda line: f'"{spread(line)}"', expectation))
+
+
+            if EXERCISE == 'protein-translation':
+                strand = input['strand']
+                property = 'proteins'
+                call = f'({property} "{strand}")'
+                if expectation.__class__ != dict:
+                    expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace(', ', ' ').replace("'", '"')
+
+            if EXERCISE == 'pascals-triangle':
+                property = 'rows'
+                count = input['count']
+                call = f'({property} {count})'
+                expectation =  str(expectation).replace(', ', ' ').replace(' [', '\n                  [')
+
+            if EXERCISE == 'diamond':
+                property = 'rows'
+                letter = input['letter']
+                call = f'({property} ?{letter})'
+                expectation = str(expectation).replace(', ', ' ').replace("'", '"')
+                expectation = expectation.replace('" "', '"\n                  "')
+
+            if EXERCISE == 'secret-handshake':
+                property = 'commands'
+                number = input['number']
+                call = f'({property} {number})'
+                expectation = "'" + str(expectation).replace(', ', ' ').replace("'", '"').replace('[', '(').replace(']', ')')
+
+
+            if EXERCISE == 'series':
+                property = 'slices'
+                args = 'series slice-length'
+                series = input['series']
+                slice_length = input['sliceLength']
+                call = f'({property} "{series}" {slice_length})'
+                if expectation.__class__ != dict:
+                    expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace(', ', ' ').replace("'", '"')
+
+            if EXERCISE == 'knapsack':
+                property = 'maximum-value'
+                maximum_weight = input['maximumWeight']
+                items = input['items']
+                def item_str(item):
+                    weight = item['weight']
+                    value = item['value']
+                    # return f'newline        ((:weight . {weight}) (:value . {value}))'
+                    return f'((:weight . {weight}) (:value . {value}))'
+
+                # weights = list(map(lambda item: item['weight'], items))
+                # values = list(map(lambda item: item['value'], items))
+                # weights = "'" + str(weights).replace('[', '(').replace(']', ')').replace(', ', ' ')
+                # values = "'" + str(values).replace('[', '(').replace(']', ')').replace(', ', ' ')
+
+                # items = "'" + str(list(map(item_str, items))).replace('[', '(').replace(']', ')').replace(', ', ' ').replace("'", '').replace("newline", "\n")
+                items = "'" + str(list(map(item_str, items))).replace('[', '(').replace(']', ')').replace("'", '')
+                items = items.replace(', ', '\n                                    ')
+
+                call = f"({property} {maximum_weight} {items})"
+
+
+            if EXERCISE == 'sum-of-multiples':
+                factors = input['factors']
+                limit = input['limit']
+                property = 'sum'
+
+                factors = str(factors)
+                factors = "'" + str(factors).replace('[', '(').replace(']', ')').replace(', ', ' ')
+
+                call = f'({property} {factors} {limit})'
+
+            if EXERCISE == 'prime-factors':
+                value = input['value']
+                property = 'factors'
+                call = f'({property} {value})'
+                expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace(', ', ' ')
+
+            if EXERCISE == 'sieve':
+                limit = input['limit']
+                property = 'primes'
+                call = f'({property} {limit})'
+                expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace(', ', ' ')
+
+            if EXERCISE == 'minesweeper':
+                property = 'annotate'
+                minefield = input['minefield']
+
+                minefield = "'" + str(minefield).replace('[', '(').replace(']', ')').replace("'", '"')
+                minefield = minefield.replace(', ', '\n                   ')
+                call = f'({property} {minefield})'
+
+                expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace("'", '"')
+                expectation = expectation.replace(', ', '\n                   ')
+                expectation = expectation + '\n\n      '
+
+            if EXERCISE == 'game-of-life':
+                property = 'tick'
+                matrix = input['matrix']
+
+                def to_line(row):
+                    return '(' + ' '.join(map(str, row)) + ')'
+
+                def to_lines(rows, separator):
+                    return '(' + separator.join(map(to_line, rows)) + ')'
+
+                # sep = '\n                        '
+                sep = '\n                   '
+                matrix = "'" + to_lines(matrix, sep)
+
+                sep = '\n                   '
+                expectation = "'" + to_lines(expectation, sep)
+
+                # ;matrix = "'" + str(matrix).replace('[', '(').replace(']', ')').replace("'", '"')
+                # ;matrix = matrix.replace(', ', '\n                   ')
+                call = f'({property} {matrix})'
+
+                # ;expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace("'", '"')
+                # ;expectation = expectation.replace(', ', '\n                   ')
+                expectation = expectation + '\n\n          '
+
+
+
+
+
+
+
+
+            if EXERCISE == 'connect':
+                property = 'winner'
+                board = input['board']
+
+                # board = "'" + str(board).replace('[', '(').replace(']', ')').replace("'", '"')
+                board = str(board).replace("'", '"')
+                board = board.replace(', ', '\n                     ')
+                call = f'({property} {board})'
+                expectation = '"' + expectation + '"' + '\n           '
+
+
+            if EXERCISE == 'pythagorean-triplet':
+                property = 'triplets-with-sum'
+                args = 'n'
+                n = input['n']
+                call = f'({property} {n})'
+                expectation = "'" + str(expectation).replace('[', '(').replace(']', ')').replace(', ', ' ')
+            if EXERCISE == 'isbn-verifier':
+                property = 'validp'
+                isbn = input['isbn']
+                call = f'({property} "{isbn}")'
+
+            if EXERCISE == 'pig-latin':
+                property = 'translate'
+                phrase = input['phrase']
+                call = f'({property} "{phrase}")'
+
+                expectation = f'"{expectation}"'
+
+
+            if EXERCISE == 'scrabble-score':
+                word = input['word']
+                call = f'({property} "{word}")'
+            if EXERCISE == 'square-root':
+                radicand = input['radicand']
+                property = 'square-root'
+                call = f'({property} {radicand})'
+            if EXERCISE == 'triangle':
+                sides = str(input['sides']).replace(', ', ' ').replace(']', ')').replace('[', "'(")
+                call = f'({property}p {sides})'
+
+            if EXERCISE == 'book-store':
+                # basket = input['basket']
+                basket = str(input['basket']).replace(', ', ' ').replace(']', ')').replace('[', "'(")
+                property = 'total'
+                call = f'({property} {basket})'
+
+            if EXERCISE == 'kindergarten-garden':
+                diagram = input['diagram'].replace('\n', '\\n')
+                student = input['student']
+                call = f'(plants "{diagram}" "{student}")'
+                # ['clover', 'grass', 'grass', 'clover'] 
+                expectation = str(expectation).replace(', ', ' ').replace(']', ')').replace("'", '"').replace('[', "'(")
+
+            if EXERCISE == 'isogram':
+                phrase = input['phrase']
+                call = f'(isogramp "{phrase}")'
+            if EXERCISE == 'queen-attack':
+                if property == 'create':
+                    queen = input['queen']
+                    position = queen['position']
+                    row = position['row']
+                    column = position['column']
+
+                    call = f"(valid-position-p '({row} . {column}))"
+                else:
+                    assert property == 'canAttack'
+
+                    white_queen = input['white_queen']
+                    white_position = white_queen['position']
+                    white_row = white_position['row']
+                    white_column = white_position['column']
+
+                    black_queen = input['black_queen']
+                    black_position = black_queen['position']
+                    black_row = black_position['row']
+                    black_column = black_position['column']
+
+                    call = f"(can-attack-p '({white_row} . {white_column}) '({black_row} . {black_column}))"
+
+
+            if EXERCISE == 'queen-attack' and property == 'create':
+                if expectation.__class__ != dict or ('error' not in expectation.keys()):
+                    expectation = True
+                else:
+                    expectation = False
+
+            if EXERCISE in ['food-chain', 'house', 'twelve-days', 'bottle-song']:
+                test_file.write(f"  (let ((expected '({expectation})))\n")
+                test_file.write(f"    (should (equal {call} expected))))\n")
+                
+
+
+
+            elif expectation.__class__ != dict or ('error' not in expectation.keys()):
+                if expectation is True:
+                    test_file.write(f'  (should {call}))\n')
+                elif expectation is False:
+                    test_file.write(f'  (should-not {call}))\n')
+                elif isinstance(expectation, (int, float, complex)) and not isinstance(expectation, bool):
+                    test_file.write(f'  (should (= {expectation} {call})))\n')
+                elif EXERCISE == 'variable-length-quantity':
+                    test_file.write(f'  (should (equal {call} {expectation})))\n')
+                elif EXERCISE == 'protein-translation':
+                    test_file.write(f'  (should (equal {expectation}\n')
+                    test_file.write(f'            {call})))\n')
+                elif EXERCISE == 'flatten-array':
+                    test_file.write(f'  (should\n')
+                    test_file.write(f'   (equal\n')
+                    test_file.write(f'    {call}\n')
+                    test_file.write(f'    {expectation})))\n')
+                else:
+                    test_file.write(f'  (should (equal {expectation} {call})))\n')
+            elif False:
+                error = expectation['error'].replace("'", "\\'")
+                test_file.write(f'  (should\n')
+                test_file.write(f'   (equal\n')
+                test_file.write(f'    (should-error {call})\n')
+                test_file.write(f'    \'(error . ("{error}")))))\n')
+
+            elif EXERCISE == 'wordy':
+                error = expectation['error'].replace(" ", "-")
+                test_file.write(f"  (should-error {call} :type '{error}))\n")
+            else:
+                error = expectation['error'].replace("'", "\\'")
+                test_file.write(f'  (should-error {call}))\n')
+
+        for case in parsed_json['cases']:
+            output_case_to_test(case)
+            if False:
+                if 'uuid' in case.keys():
+                    output_case_to_test(case)
+                else:
+                    for inner_case in case['cases']:
+                        output_case_to_test(inner_case)   
+
+
+        test_file.write('\n')
+        test_file.write('\n')
+        test_file.write(f'(provide \'{EXERCISE}-test)\n')
+        test_file.write(f';;; {EXERCISE}-test.el ends here\n')
